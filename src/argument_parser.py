@@ -3,6 +3,7 @@
 from typing import Dict, List
 from pathlib import Path
 import os
+import json
 
 
 def file_permission(io_files: Dict[str, str]) -> None:
@@ -50,7 +51,7 @@ def file_permission(io_files: Dict[str, str]) -> None:
                 )
 
 
-def parse_files(argv: List[str]) -> Dict[str, str]:
+def parse_files(argv: List[str]) -> List:
     """
     Receives system args and overwrites defaults if any is passed as parameter.
 
@@ -79,13 +80,22 @@ def parse_files(argv: List[str]) -> Dict[str, str]:
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
         if (io_files["output"] == "data/output/function_calls.json"):
-            if (not Path("data").exists() or
-                not os.access(Path("data"), os.W_OK)):
+            if (
+                not Path("data").exists()
+                or not os.access(Path("data"), os.W_OK)
+            ):
                 raise PermissionError("'data' directory missing or without "
                                       "writing permission for output"
                                       )
         file_permission(io_files)
+        definitions: List[Dict]
+        tests: List[Dict]
+        output = io_files["output"]
+        with open(io_files["functions_definition"]) as file:
+            definitions = json.load(file)
+        with open(io_files["input"]) as file:
+            tests = json.load(file)
     except Exception as err:
         raise Exception(f"Parsing files: {err}")
 
-    return io_files
+    return [definitions, tests, output]
