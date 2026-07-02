@@ -3,7 +3,6 @@
 from typing import Dict, List
 from pathlib import Path
 import os
-import tempfile
 
 
 def file_permission(io_files: Dict[str, str]) -> None:
@@ -14,17 +13,17 @@ def file_permission(io_files: Dict[str, str]) -> None:
     Args:
         io_files: Dictionary with definition, input and output files
     """
-    func_def = Path(io_files["function_definition"])
+    func_def = Path(io_files["functions_definition"])
     input = Path(io_files["input"])
     output = Path(io_files["output"])
     # Checking Function definition file
     if not func_def.exists():
         raise FileNotFoundError(
-            f"File '{io_files['function_definition']}' not found"
+            f"File '{io_files['functions_definition']}' not found"
             )
     if not os.access(func_def, os.R_OK):
         raise PermissionError(
-            f"No permission to access '{io_files['function_definition']}'"
+            f"No permission to access '{io_files['functions_definition']}'"
             )
     # Checking input file
     if not input.exists():
@@ -79,6 +78,8 @@ def parse_files(argv: List[str]) -> Dict[str, str]:
                 io_files[flag] = value
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
+        if (io_files["output"] == "data/output/function_calls.json"):
+            Path("data/output").mkdir(parents=True, exist_ok=True)
         file_permission(io_files)
     except Exception as err:
         raise Exception(f"Parsing files: {err}")
