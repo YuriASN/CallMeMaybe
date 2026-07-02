@@ -79,7 +79,11 @@ def parse_files(argv: List[str]) -> Dict[str, str]:
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
         if (io_files["output"] == "data/output/function_calls.json"):
-            Path("data/output").mkdir(parents=True, exist_ok=True)
+            if (not Path("data").exists() or
+                not os.access(Path("data"), os.W_OK)):
+                raise PermissionError("'data' directory missing or without "
+                                      "writing permission for output"
+                                      )
         file_permission(io_files)
     except Exception as err:
         raise Exception(f"Parsing files: {err}")
