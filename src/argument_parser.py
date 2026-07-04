@@ -36,19 +36,29 @@ def file_permission(io_files: Dict[str, str]) -> None:
             f"No permission to access '{io_files['input']}'"
             )
     # Checking output directory and file
-    if not output.parent.exists():
-        raise FileNotFoundError(
-            f"Directory '{output.parent}' for the output file does not exists"
-            )
-    if not os.access(output.parent, os.W_OK):
-        raise PermissionError(
-            f"No permissions to write on '{output.parent}'"
-            )
-    if output.exists():
-        if not os.access(output, os.W_OK):
-            raise PermissionError(
-                f"No permission to write on '{io_files['output']}'"
+    if (io_files["output"] == "data/output/function_calls.json"):
+        if (
+            not Path("data").exists()
+            or not os.access(Path("data"), os.W_OK)
+        ):
+            raise PermissionError("'data' directory missing or without "
+                                    "writing permission for output"
+                                    )
+    else:
+        if not output.parent.exists():
+            raise FileNotFoundError(
+                f"Directory '{output.parent}' "
+                "for the output file does not exists"
                 )
+        if not os.access(output.parent, os.W_OK):
+            raise PermissionError(
+                f"No permissions to write on directory'{output.parent}'"
+                )
+        if output.exists():
+            if not os.access(output, os.W_OK):
+                raise PermissionError(
+                    f"No permission to write on '{io_files['output']}'"
+                    )
 
 
 def parse_files(argv: List[str]) -> List:
@@ -79,14 +89,6 @@ def parse_files(argv: List[str]) -> List:
                 io_files[flag] = value
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
-        if (io_files["output"] == "data/output/function_calls.json"):
-            if (
-                not Path("data").exists()
-                or not os.access(Path("data"), os.W_OK)
-            ):
-                raise PermissionError("'data' directory missing or without "
-                                      "writing permission for output"
-                                      )
         file_permission(io_files)
         definitions: List[Dict]
         tests: List[Dict]
