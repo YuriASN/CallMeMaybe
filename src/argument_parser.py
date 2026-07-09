@@ -6,37 +6,16 @@ import os
 import json
 
 
-def file_permission(io_files: Dict[str, str]) -> None:
+def write_permission(file: str) -> None:
     """
-    Checks for files permission to read and write depending on the file.
-    If doesn't exist, checks for directory permission.
+    Checks if file can be created nor written on, raising an error if not.
+    If file is default, also checks if the 'output' directory can be created.
 
     Args:
-        io_files: Dictionary with definition, input and output files
+        file: String with the path for the file.
     """
-    func_def = Path(io_files["functions_definition"])
-    input = Path(io_files["input"])
-    output = Path(io_files["output"])
-    # Checking Function definition file
-    if not func_def.exists():
-        raise FileNotFoundError(
-            f"File '{io_files['functions_definition']}' not found"
-            )
-    if not os.access(func_def, os.R_OK):
-        raise PermissionError(
-            f"No permission to access '{io_files['functions_definition']}'"
-            )
-    # Checking input file
-    if not input.exists():
-        raise FileNotFoundError(
-            f"File '{io_files['input']}' not found"
-            )
-    if not os.access(input, os.R_OK):
-        raise PermissionError(
-            f"No permission to access '{io_files['input']}'"
-            )
-    # Checking output directory and file
-    if (io_files["output"] == "data/output/function_calls.json"):
+    pfile = Path(file)
+    if (file == "data/output/function_calls.json"):
         if (
             not Path("data").exists()
             or not os.access(Path("data"), os.W_OK)
@@ -45,19 +24,19 @@ def file_permission(io_files: Dict[str, str]) -> None:
                                     "writing permission for output"
                                     )
     else:
-        if not output.parent.exists():
+        if not pfile.parent.exists():
             raise FileNotFoundError(
-                f"Directory '{output.parent}' "
-                "for the output file does not exists"
+                f"Directory '{pfile.parent}' "
+                "for the pfile file does not exists"
                 )
-        if not os.access(output.parent, os.W_OK):
+        if not os.access(pfile.parent, os.W_OK):
             raise PermissionError(
-                f"No permissions to write on directory'{output.parent}'"
+                f"No permissions to write on directory'{pfile.parent}'"
                 )
-        if output.exists():
-            if not os.access(output, os.W_OK):
+        if pfile.exists():
+            if not os.access(pfile, os.W_OK):
                 raise PermissionError(
-                    f"No permission to write on '{io_files['output']}'"
+                    f"No permission to write on '{file}'"
                     )
 
 
@@ -89,7 +68,7 @@ def parse_files(argv: List[str]) -> List:
                 io_files[flag] = value
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
-        file_permission(io_files)
+        write_permission(io_files["output"])
         definitions: List[Dict]
         tests: List[Dict]
         output = io_files["output"]
