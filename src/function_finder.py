@@ -55,20 +55,36 @@ class FuncFinder(BaseModel):
 
     @model_validator(mode="after")
     def validate_input_received(self) -> "FuncFinder":
+        function_keys = ["name", "description", "parameters", "returns"]
         for each in self.definitions:
-            if not all(key in each for key in (
-                    "name", "description", "parameters", "returns")):
+            # Check if all needed keys are on the definition
+            if not all(key in each for key in function_keys):
                 raise ValidationError(
                     "Missing parameters on a function definition.")
+            # Checks if there're extra keys on the definition
+            if not all(key in function_keys for key in each.keys()):
+                raise KeyError(
+                    "There's a invalid key on a function definition")
+            # Checks if all parameters have a 'type' key
             for param in each["parameters"]:
                 if "type" not in param.keys():
                     raise ValidationError(
                         "Missing type of parameter on a function definition")
+                # Checks if only 'type' is a key on a parameter
+                if not all(key == "type" for key in param.keys()):
+                    raise KeyError(
+                        "There's invalid key on a function parameter")
 
         for each in self.prompts:
+            # Check for the prompt key
             if "prompt" not in each.keys():
                 raise ValidationError(
                     "Missing the 'prompt' key in a test")
+            # Check if no extra key is given
+            for key in each.keys():
+                if key == "prompt":
+                    raise KeyError(
+                        f"Key '{key}' is invalid for a prompt.")
 
         return self
 
