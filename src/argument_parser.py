@@ -21,8 +21,7 @@ def write_permission(file: str) -> None:
             or not os.access(Path("data"), os.W_OK)
         ):
             raise PermissionError("'data' directory missing or without "
-                                    "writing permission for output"
-                                    )
+                                  "writing permission for output")
     else:
         if not pfile.parent.exists():
             raise FileNotFoundError(
