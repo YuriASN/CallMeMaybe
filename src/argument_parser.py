@@ -6,6 +6,26 @@ import os
 import json
 
 
+def check_input_file(input_file: str) -> List[Dict]:
+    """
+    Checks if the file can be readed and if the json is valid.
+    Args:
+        input_file: Path to the file to be readed
+    Return:
+        Result of json.load(), a list of dict
+    """
+    try:
+        with open(input_file) as file:
+            result = json.load(file)
+    except json.JSONDecodeError as err:
+        raise Exception("Error enconding definitions from file "
+                        f"'{input_file}': {err}")
+    except Exception as err:
+        raise Exception(f"Error handling file '{input_file}': {err}")
+
+    return result
+
+
 def write_permission(file: str) -> None:
     """
     Checks if file can be created nor written on, raising an error if not.
@@ -71,10 +91,8 @@ def parse_files(argv: List[str]) -> List:
         definitions: List[Dict]
         tests: List[Dict]
         output = io_files["output"]
-        with open(io_files["functions_definition"]) as file:
-            definitions = json.load(file)
-        with open(io_files["input"]) as file:
-            tests = json.load(file)
+        definitions = check_input_file(io_files["functions_definition"])
+        tests = check_input_file(io_files["input"])
     except Exception as err:
         raise Exception(f"Parsing files: {err}")
 
