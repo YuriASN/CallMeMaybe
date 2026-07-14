@@ -147,9 +147,8 @@ class FuncFinder():
         # Checking output permissions
         try:
             if not output:
-                write_permission("data/output/function_calls.json")
-            else:
-                write_permission(output)
+                self.output = "data/output/function_calls.json"
+            write_permission(self.output)
         except Exception as err:
             raise Exception(f"Getting data: {err}")
 
