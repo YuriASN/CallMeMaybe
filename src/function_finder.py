@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 
 """
-The Module receives a list of dict with the definition of functions for
-the LLM to find the best to solve a prompt received.
+The Module receives a list of dict or the files to retreive the data.
+It has the definition of functions for the LLM to find the best to solve a
+prompt received. In case no data or files are passed as parameters, the default
+will be used:
+    definitions: data/input/functions_definition.json
+    prompts: data/input/function_calling_tests.json
+    output: data/output/function_calls.json
 Returns a List of dict with the prompt received, name of the function found
 and parameters of the prompt filling the ones on the function.
 
@@ -40,49 +45,47 @@ The Results given will be:
 
 from .argument_parser import parse_files, write_permission, check_input_file
 from typing import Dict, List
-from pydantic import BaseModel, model_validator, ValidationError
 from pathlib import Path
 import json
 import sys
 import os
 
 
-class FuncFinder(BaseModel):
+class FuncFinder():
     definitions: List[Dict]
     prompts: List[Dict]
     output: str
     result: str
 
-    @model_validator(mode="after")
     def validate_input_received(self) -> "FuncFinder":
         function_keys = ["name", "description", "parameters", "returns"]
         for each in self.definitions:
             # Check if all needed keys are on the definition
             if not all(key in each for key in function_keys):
-                raise ValidationError(
+                raise KeyError(
                     "Missing parameters on a function definition.")
             # Checks if there're extra keys on the definition
             if not all(key in function_keys for key in each.keys()):
                 raise KeyError(
                     "There's a invalid key on a function definition")
             # Checks if all parameters have a 'type' key
-            for param in each["parameters"]:
-                if "type" not in param.keys():
-                    raise ValidationError(
-                        "Missing type of parameter on a function definition")
+            for key, value in each["parameters"].items():
+                if "type" not in value.keys():
+                    raise KeyError(
+                        "Missing type of parameter on a function definition.")
                 # Checks if only 'type' is a key on a parameter
-                if not all(key == "type" for key in param.keys()):
+                if not all(key == "type" for key in value.keys()):
                     raise KeyError(
                         "There's invalid key on a function parameter")
 
         for each in self.prompts:
             # Check for the prompt key
             if "prompt" not in each.keys():
-                raise ValidationError(
+                raise KeyError(
                     "Missing the 'prompt' key in a test")
             # Check if no extra key is given
             for key in each.keys():
-                if key == "prompt":
+                if key != "prompt":
                     raise KeyError(
                         f"Key '{key}' is invalid for a prompt.")
 
@@ -105,7 +108,7 @@ class FuncFinder(BaseModel):
         """
         try:
             # Checking definitions
-            if type(definitions) is List:
+            if type(definitions) is list:
                 try:
                     # Check if json is valid.
                     json.dumps(definitions)
@@ -113,7 +116,7 @@ class FuncFinder(BaseModel):
                 except json.JSONDecodeError as err:
                     raise Exception(f"Error enconding definitions: {err}")
             else:
-                if not definitions:
+                if definitions is None:
                     self.definitions = check_input_file(
                         "data/input/functions_definition.json")
                 elif type(definitions) is str:
@@ -122,7 +125,7 @@ class FuncFinder(BaseModel):
                     raise TypeError("Handling definitions, wrong parameter "
                                     f"type received: '{type(definitions)}'")
             # Checking prompts
-            if type(prompts) is List:
+            if type(prompts) is list:
                 try:
                     # Check if json is valid.
                     json.dumps(prompts)
@@ -130,14 +133,15 @@ class FuncFinder(BaseModel):
                 except json.JSONDecodeError as err:
                     raise Exception(f"Error enconding prompts: {err}")
             else:
-                if not prompts:
+                if prompts is None:
                     self.prompts = check_input_file(
                         "data/input/function_calling_tests.json")
                 elif type(prompts) is str:
                     self.prompts = check_input_file(prompts)
                 else:
-                    raise TypeError("Handling definitions, wrong parameter "
-                                    f"type received: '{type(definitions)}'")
+                    raise TypeError("Handling prompts, wrong parameter "
+                                    f"type received: '{type(prompts)}'")
+            self.validate_input_received()
         except Exception as err:
             raise err
         # Checking output permissions
@@ -147,7 +151,7 @@ class FuncFinder(BaseModel):
             else:
                 write_permission(output)
         except Exception as err:
-            raise err
+            raise Exception(f"Getting data: {err}")
 
     def parse_data_files(self) -> None:
         """
@@ -155,7 +159,11 @@ class FuncFinder(BaseModel):
         files passed as parameters on sys args.
         Or uses default files if a parameter isn't passed.
         """
-        self.definitions, self.prompts, self.output = parse_files(sys.argv)
+        try:
+            self.definitions, self.prompts, self.output = parse_files(sys.argv)
+            self.validate_input_received()
+        except Exception as err:
+            raise Exception(f"Parsing data files: {err}")
 
     def export_result(self) -> None:
         """
