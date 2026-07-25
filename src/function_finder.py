@@ -44,135 +44,238 @@ The Results given will be:
 """
 
 from .argument_parser import parse_files, write_permission, check_input_file
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from pathlib import Path
+from llm_sdk import Small_LLM_Model
+import numpy as np
 import json
 import sys
 import os
 
 
-class FuncFinder():
-    definitions: List[Dict]
-    prompts: List[Dict]
-    output: str
-    result: str
-
-    def validate_input_received(self) -> "FuncFinder":
-        function_keys = ["name", "description", "parameters", "returns"]
-        for each in self.definitions:
-            # Check if all needed keys are on the definition
-            if not all(key in each for key in function_keys):
+def _validate_input_received(definitions: List[Dict],
+                            prompts: List[Dict]) -> None:
+    function_keys = ["name", "description", "parameters", "returns"]
+    for each in definitions:
+        # Check if all needed keys are on the definition
+        if not all(key in each for key in function_keys):
+            raise KeyError(
+                "Missing parameters on a function definition.")
+        # Checks if there're extra keys on the definition
+        if not all(key in function_keys for key in each.keys()):
+            raise KeyError(
+                "There's a invalid key on a function definition")
+        # Checks if all parameters have a 'type' key
+        for key, value in each["parameters"].items():
+            if "type" not in value.keys():
                 raise KeyError(
-                    "Missing parameters on a function definition.")
-            # Checks if there're extra keys on the definition
-            if not all(key in function_keys for key in each.keys()):
+                    "Missing type of parameter on a function definition.")
+            # Checks if only 'type' is a key on a parameter
+            if not all(key == "type" for key in value.keys()):
                 raise KeyError(
-                    "There's a invalid key on a function definition")
-            # Checks if all parameters have a 'type' key
-            for key, value in each["parameters"].items():
-                if "type" not in value.keys():
-                    raise KeyError(
-                        "Missing type of parameter on a function definition.")
-                # Checks if only 'type' is a key on a parameter
-                if not all(key == "type" for key in value.keys()):
-                    raise KeyError(
-                        "There's invalid key on a function parameter")
+                    "There's invalid key on a function parameter")
 
-        for each in self.prompts:
-            # Check for the prompt key
-            if "prompt" not in each.keys():
+    for each in prompts:
+        # Check for the prompt key
+        if "prompt" not in each.keys():
+            raise KeyError(
+                "Missing the 'prompt' key in a test")
+        # Check if no extra key is given
+        for key in each.keys():
+            if key != "prompt":
                 raise KeyError(
-                    "Missing the 'prompt' key in a test")
-            # Check if no extra key is given
-            for key in each.keys():
-                if key != "prompt":
-                    raise KeyError(
-                        f"Key '{key}' is invalid for a prompt.")
+                    f"Key '{key}' is invalid for a prompt.")
 
-        return self
 
-    def get_data(self, definitions: List[Dict] | str | None,
-                 prompts: List[Dict] | str | None,
-                 output: str | None) -> None:
+def get_data(definitions_received: List[Dict] | str | None,
+             prompts_received: List[Dict] | str | None,
+             output_received: str | None) -> Tuple[List[Dict], List[Dict], str]:
+    """
+    Get the definition of the functions, prompts for the LLM
+    and path to output the result.
+    If a argument is None, default files are used.
+
+    Args:
+        definitions: List of dict with the definition of functions or
+        string with file path.
+        prompts: List of dict with prompts for the LLM to search for a
+        function to be used or string with file path.
+        output: String with the path of file to save the result.
+    """
+    try:
+        # Checking definitions
+        if type(definitions_received) is list:
+            try:
+                # Check if json is valid.
+                json.dumps(definitions_received)
+                definitions = definitions_received
+            except json.JSONDecodeError as err:
+                raise Exception(f"Error enconding definitions: {err}")
+        else:
+            if definitions_received is None:
+                definitions = check_input_file(
+                    "data/input/functions_definition.json")
+            elif type(definitions_received) is str:
+                definitions = check_input_file(definitions_received)
+            else:
+                raise TypeError("Handling definitions, wrong parameter "
+                                f"type received: '{type(definitions_received)}'")
+        # Checking prompts
+        if type(prompts_received) is list:
+            try:
+                # Check if json is valid.
+                json.dumps(prompts_received)
+                prompts = prompts_received
+            except json.JSONDecodeError as err:
+                raise Exception(f"Error enconding prompts: {err}")
+        else:
+            if prompts_received is None:
+                prompts = check_input_file(
+                    "data/input/function_calling_tests.json")
+            elif type(prompts_received) is str:
+                prompts = check_input_file(prompts_received)
+            else:
+                raise TypeError("Handling prompts, wrong parameter "
+                                f"type received: '{type(prompts_received)}'")
+        _validate_input_received(definitions, prompts)
+    except Exception as err:
+        raise err
+    # Checking output permissions
+    try:
+        if not output_received:
+            output = "data/output/function_calls.json"
+        else:
+            output = output_received
+        write_permission(output)
+    except Exception as err:
+        raise Exception(f"Getting data: {err}")
+    
+    return definitions, prompts, output
+
+def parse_data_files() -> Tuple[List[Dict], List[Dict], str]:
+    """
+    Parse the definitions, inputs and output from
+    files passed as parameters on sys args.
+    Or uses default files if a parameter isn't passed.
+    """
+    try:
+        definitions, prompts, output = parse_files(sys.argv)
+        _validate_input_received(definitions, prompts)
+    except Exception as err:
+        raise Exception(f"Parsing data files: {err}")
+
+    return definitions, prompts, output
+
+def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
+    decoded = llm.decode([logit])
+    if decoded in string:
+        return True
+    if decoded == '",':
+        return True
+    return False
+
+
+def run_prompts(definitions: List[Dict],
+                prompts: List[Dict],
+                output: str) -> str:
+    """
+    Call the LLM to solve prompt by prompt from the list.
+    Saving everything on the result string.
+
+    Args:
+        definitions: The List of Dicts with the functions available for use.
+        prompts: The prompts to ask for the LLM.
+        output: The str with the path to the file to be outputed on.
+    """
+    def get_name(def_str: str, result: str, llm: Small_LLM_Model) -> str:
         """
-        Get the definition of the functions, prompts for the LLM
-        and path to output the result.
-        If a argument is None, default files are used.
+        Get the name of the function constraining the json format.
 
         Args:
-            definitions: List of dict with the definition of functions or
-            string with file path.
-            prompts: List of dict with prompts for the LLM to search for a
-            function to be used or string with file path.
-            output: String with the path of file to save the result.
+            def_str: The definitions of the functions to search on.
+            result: Current llm prompt as will go to the output.
+            llm: The llm being used.
+        Return:
+            The concactenation of last result and the name of the function
+            contrained to a json format.
         """
-        try:
-            # Checking definitions
-            if type(definitions) is list:
-                try:
-                    # Check if json is valid.
-                    json.dumps(definitions)
-                    self.definitions = definitions
-                except json.JSONDecodeError as err:
-                    raise Exception(f"Error enconding definitions: {err}")
-            else:
-                if definitions is None:
-                    self.definitions = check_input_file(
-                        "data/input/functions_definition.json")
-                elif type(definitions) is str:
-                    self.definitions = check_input_file(definitions)
-                else:
-                    raise TypeError("Handling definitions, wrong parameter "
-                                    f"type received: '{type(definitions)}'")
-            # Checking prompts
-            if type(prompts) is list:
-                try:
-                    # Check if json is valid.
-                    json.dumps(prompts)
-                    self.prompts = prompts
-                except json.JSONDecodeError as err:
-                    raise Exception(f"Error enconding prompts: {err}")
-            else:
-                if prompts is None:
-                    self.prompts = check_input_file(
-                        "data/input/function_calling_tests.json")
-                elif type(prompts) is str:
-                    self.prompts = check_input_file(prompts)
-                else:
-                    raise TypeError("Handling prompts, wrong parameter "
-                                    f"type received: '{type(prompts)}'")
-            self.validate_input_received()
-        except Exception as err:
-            raise err
-        # Checking output permissions
-        try:
-            if not output:
-                self.output = "data/output/function_calls.json"
-            write_permission(self.output)
-        except Exception as err:
-            raise Exception(f"Getting data: {err}")
+        name = '"name": "fn'
+        def_tokens = llm.encode(def_str).tolist()[0]
+        tokens_list = def_tokens + llm.encode(result + name).tolist()[0]
+        while True:
+            logits = llm.get_logits_from_input_ids(tokens_list)
+            min_logit = min(logits)
+            while True:
+                max_index = logits.index(max(logits))
+                if logit_in_str(max_index, def_str, llm):
+                    break
+                logits[max_index] = min_logit
+            new_token = llm.decode(logits.index(max(logits)))
+            name += new_token
+            if name.endswith(" ") or name.endswith('",'):
+                return name
+            tokens_list = llm.encode(def_str + result + name).tolist()[0]
 
-    def parse_data_files(self) -> None:
+    def get_parameters(def_str: str, result: str, llm: Small_LLM_Model) -> str:
         """
-        Parse the definitions, inputs and output from
-        files passed as parameters on sys args.
-        Or uses default files if a parameter isn't passed.
-        """
-        try:
-            self.definitions, self.prompts, self.output = parse_files(sys.argv)
-            self.validate_input_received()
-        except Exception as err:
-            raise Exception(f"Parsing data files: {err}")
+        Get the parameters of the function with the value passed on the prompt.
 
-    def export_result(self) -> None:
+        Args:
+            def_str: The definitions of the functions to search on.
+            result: Current llm call and responses.
+            llm: The llm being used.
+        Return:
+            The concactenation of last result and the parameters of the
+            function constrained to a json format.
         """
-        Export the result to a json file.
-        """
-        try:
-            if (self.output == "data/output/function_calls.json"
-                    and not Path("data/output")):
-                os.mkdir("data/output")
-            with open(self.output, "w") as file:
-                json.dump(self.result, file)
-        except Exception as err:
-            raise Exception(f"Writing to output: {err}")
+        params = ' "parameters": {"'
+        return params#
+        tokens = llm.encode(def_str + result + params)
+        while True:
+            logits = llm.get_logits_from_input_ids(*(tokens.tolist()))
+            new_token = llm.decode(logits.index(max(logits)))
+            params += new_token
+            if params.endswith(' ') or params.endswith('}'):
+                print(f"New token to break: '{new_token}'")#
+                return params
+            tokens = llm.encode(def_str + result + params)
+
+    if not definitions:
+        raise NotImplementedError(
+            "The functions definitions weren't loaded.")
+    if not prompts:
+        raise NotImplementedError("The prompts weren't loaded.")
+    if not output:
+        raise NotImplementedError("No file to store the output.")
+    try:
+        llm = Small_LLM_Model()
+
+        definitions_str = str(definitions)
+        result = "["
+        for prompt in prompts:
+            print(f"Running prompt: '{prompt['prompt']}'")#
+            current_res = ""
+            current_res += '{"prompt": "' + prompt['prompt'] + '", '
+            current_res += get_name(definitions_str,
+                                    current_res, llm)
+            current_res += get_parameters(definitions_str, current_res, llm)
+            result += current_res + ","
+        result = result.removesuffix(",") + "]"
+
+    except Exception as err:
+        print(f"Running LLM: {err}")
+
+    return result
+
+def export_result(result: str, output: str) -> None:
+    """
+    Export the result to a json file.
+    """
+    try:
+        if (output == "data/output/function_calls.json"
+                and not Path("data/output")):
+            os.mkdir("data/output")
+        with open(output, "w") as file:
+            json.dump(result, file)
+    except Exception as err:
+        raise Exception(f"Writing to output: {err}")
