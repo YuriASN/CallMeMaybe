@@ -200,21 +200,22 @@ def run_prompts(definitions: List[Dict],
             contrained to a json format.
         """
         name = '"name": "fn'
-        def_tokens = llm.encode(def_str).tolist()[0]
-        tokens_list = def_tokens + llm.encode(result + name).tolist()[0]
+        tokens = llm.encode(def_str + result + name).tolist()[0]
         while True:
-            logits = llm.get_logits_from_input_ids(tokens_list)
+            logits = llm.get_logits_from_input_ids(tokens)
             min_logit = min(logits)
             while True:
                 max_index = logits.index(max(logits))
                 if logit_in_str(max_index, def_str, llm):
                     break
+                else:#
+                    print("working")#
                 logits[max_index] = min_logit
             new_token = llm.decode(logits.index(max(logits)))
             name += new_token
             if name.endswith(" ") or name.endswith('",'):
                 return name
-            tokens_list = llm.encode(def_str + result + name).tolist()[0]
+            tokens = llm.encode(def_str + result + name).tolist()[0]
 
     def get_parameters(def_str: str, result: str, llm: Small_LLM_Model) -> str:
         """
@@ -229,16 +230,17 @@ def run_prompts(definitions: List[Dict],
             function constrained to a json format.
         """
         params = ' "parameters": {"'
-        return params#
-        tokens = llm.encode(def_str + result + params)
+        tokens = llm.encode(def_str + result + params).tolist()[0]
         while True:
-            logits = llm.get_logits_from_input_ids(*(tokens.tolist()))
+            logits = llm.get_logits_from_input_ids(tokens)
             new_token = llm.decode(logits.index(max(logits)))
             params += new_token
-            if params.endswith(' ') or params.endswith('}'):
-                print(f"New token to break: '{new_token}'")#
+            if new_token == " " or params.find("}}") != -1:
+                if new_token == " ":
+                    print("Well.. wtf", end="\t")
+                print(f"stopping with param: {params}")
                 return params
-            tokens = llm.encode(def_str + result + params)
+            tokens = llm.encode(def_str + result + params).tolist()[0]
 
     if not definitions:
         raise NotImplementedError(
@@ -259,7 +261,8 @@ def run_prompts(definitions: List[Dict],
             current_res += get_name(definitions_str,
                                     current_res, llm)
             current_res += get_parameters(definitions_str, current_res, llm)
-            result += current_res + ","
+            result += current_res + "," + "\n"#remove \n
+            #print(current_res+"\n")#
         result = result.removesuffix(",") + "]"
 
     except Exception as err:
