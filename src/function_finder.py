@@ -85,6 +85,8 @@ def _validate_input_received(definitions: List[Dict],
             if key != "prompt":
                 raise KeyError(
                     f"Key '{key}' is invalid for a prompt.")
+        #Check if prompt has " and change for '
+        each['prompt'] = each['prompt'].replace('"', "'")
 
 
 def get_data(definitions_received: List[Dict] | str | None,
@@ -177,7 +179,7 @@ def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
 
 def run_prompts(definitions: List[Dict],
                 prompts: List[Dict],
-                output: str) -> str:
+                output: str) -> List[Dict]:
     """
     Call the LLM to solve prompt by prompt from the list.
     Saving everything on the result string.
@@ -206,14 +208,12 @@ def run_prompts(definitions: List[Dict],
             min_logit = min(logits)
             while True:
                 max_index = logits.index(max(logits))
-                if logit_in_str(max_index, def_str, llm):
+                if logit_in_str(max_index, def_str, llm) and llm.decode(logits.index(max(logits))) != " ":
                     break
-                else:#
-                    print("working")#
                 logits[max_index] = min_logit
             new_token = llm.decode(logits.index(max(logits)))
             name += new_token
-            if name.endswith(" ") or name.endswith('",'):
+            if name.endswith('",'):
                 return name
             tokens = llm.encode(def_str + result + name).tolist()[0]
 
@@ -234,11 +234,12 @@ def run_prompts(definitions: List[Dict],
         while True:
             logits = llm.get_logits_from_input_ids(tokens)
             new_token = llm.decode(logits.index(max(logits)))
+            min_logit = min(logits)
+            if new_token == " ":
+                logits[logits.index(max(logits))] = min_logit
+                new_token = llm.decode(logits.index(max(logits)))
             params += new_token
-            if new_token == " " or params.find("}}") != -1:
-                if new_token == " ":
-                    print("Well.. wtf", end="\t")
-                print(f"stopping with param: {params}")
+            if params.find("}}") != -1:
                 return params
             tokens = llm.encode(def_str + result + params).tolist()[0]
 
@@ -253,7 +254,7 @@ def run_prompts(definitions: List[Dict],
         llm = Small_LLM_Model()
 
         definitions_str = str(definitions)
-        result = "["
+        result: List[Dict] = []
         for prompt in prompts:
             print(f"Running prompt: '{prompt['prompt']}'")#
             current_res = ""
@@ -261,16 +262,14 @@ def run_prompts(definitions: List[Dict],
             current_res += get_name(definitions_str,
                                     current_res, llm)
             current_res += get_parameters(definitions_str, current_res, llm)
-            result += current_res + "," + "\n"#remove \n
-            #print(current_res+"\n")#
-        result = result.removesuffix(",") + "]"
+            result.append(json.loads(current_res))
 
     except Exception as err:
-        print(f"Running LLM: {err}")
+        print(f"Running LLM: {err}\nCurrent result:\n{current_res}")
 
     return result
 
-def export_result(result: str, output: str) -> None:
+def export_result(result: List[Dict], output: str) -> None:
     """
     Export the result to a json file.
     """
@@ -279,6 +278,6 @@ def export_result(result: str, output: str) -> None:
                 and not Path("data/output")):
             os.mkdir("data/output")
         with open(output, "w") as file:
-            json.dump(result, file)
+            json.dump(result, file, indent=4)
     except Exception as err:
         raise Exception(f"Writing to output: {err}")
