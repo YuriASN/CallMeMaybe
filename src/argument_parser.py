@@ -74,7 +74,7 @@ def parse_files(argv: List[str]) -> List:
         io_files = {
             "functions_definition": "data/input/functions_definition.json",
             "input": "data/input/function_calling_tests.json",
-            "output": "data/output/function_calls.json"
+            "output": "data/output/function_calling_results.json"
         }
         for i in range(1, len(argv) - 1, 2):
             flag = argv[i][2:]
