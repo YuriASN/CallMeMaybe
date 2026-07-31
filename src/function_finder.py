@@ -86,7 +86,7 @@ def _validate_input_received(definitions: List[Dict],
                 raise KeyError(
                     f"Key '{key}' is invalid for a prompt.")
         #Check if prompt has " and change for '
-        each['prompt'] = each['prompt'].replace('"', "'")
+        each['prompt'] = each['prompt'].replace('"', "'")#raplace is right or add a backslash?
 
 
 def get_data(definitions_received: List[Dict] | str | None,
@@ -237,9 +237,18 @@ def run_prompts(definitions: List[Dict],
             min_logit = min(logits)
             if new_token == " ":
                 logits[logits.index(max(logits))] = min_logit
-                new_token = llm.decode(logits.index(max(logits)))
-            params += new_token
-            if params.find("}}") != -1:
+            if params.endswith('":'):#
+                params += ' "'
+                tokens = llm.encode(def_str + result + params).tolist()[0]
+                logits = llm.get_logits_from_input_ids(tokens)
+                while True:
+                    max_index = logits.index(max(logits))
+                    if logit_in_str(max_index, result, llm) and llm.decode(logits.index(max(logits))) != " ":
+                        break
+                    logits[max_index] = min_logit
+            params += llm.decode(logits.index(max(logits)))
+            #print(params)
+            if params.count("{") + 1 == params.count("}"):
                 return params
             tokens = llm.encode(def_str + result + params).tolist()[0]
 
@@ -256,13 +265,16 @@ def run_prompts(definitions: List[Dict],
         definitions_str = str(definitions)
         result: List[Dict] = []
         for prompt in prompts:
-            print(f"Running prompt: '{prompt['prompt']}'")#
+            print(f"Running prompt: '{prompt['prompt']}'")
             current_res = ""
             current_res += '{"prompt": "' + prompt['prompt'] + '", '
             current_res += get_name(definitions_str,
                                     current_res, llm)
+            print(" function name found...", end="", flush=True)
             current_res += get_parameters(definitions_str, current_res, llm)
+            print(" function parameters found...", end="", flush=True)
             result.append(json.loads(current_res))
+            print(f" valid json.")
 
     except Exception as err:
         print(f"Running LLM: {err}\nCurrent result:\n{current_res}")
