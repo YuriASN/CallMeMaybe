@@ -31,5 +31,14 @@
   },
   {
     "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+  },
+  {
+    "prompt": ""
+  },
+  {
+    "prompt": "Does the string \"This is a string\" has spaces?"
+  },
+  {
+    "prompt": "How many spaces the string \"This is a string\" has?"
   }
 ]

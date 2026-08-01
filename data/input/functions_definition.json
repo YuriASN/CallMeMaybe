@@ -67,5 +67,29 @@
     "returns": {
       "type": "string"
     }
+  },
+  {
+    "name": "fn_has_space",
+    "description": "Check if the string has any space on it.",
+    "parameters": {
+      "source_string": {
+        "type": "string"
+      }
+    },
+    "returns": {
+      "type": "boolean"
+    }
+  },
+  {
+    "name": "fn_count_spaces",
+    "description": "Count how many spaces the string has.",
+    "parameters": {
+      "source_string": {
+        "type": "string"
+      }
+    },
+    "returns": {
+      "type": "int"
+    }
   }
 ]
