@@ -47,14 +47,13 @@ from .argument_parser import parse_files, write_permission, check_input_file
 from typing import Dict, List, Tuple
 from pathlib import Path
 from llm_sdk import Small_LLM_Model
-import numpy as np
 import json
 import sys
 import os
 
 
 def _validate_input_received(definitions: List[Dict],
-                            prompts: List[Dict]) -> None:
+                             prompts: List[Dict]) -> None:
     function_keys = ["name", "description", "parameters", "returns"]
     for each in definitions:
         # Check if all needed keys are on the definition
@@ -85,13 +84,13 @@ def _validate_input_received(definitions: List[Dict],
             if key != "prompt":
                 raise KeyError(
                     f"Key '{key}' is invalid for a prompt.")
-        #Check if prompt has " and change for '
-        each['prompt'] = each['prompt'].replace('"', "'")#raplace is right or add a backslash?
+        # Check if prompt has " and change for '
+        each['prompt'] = each['prompt'].replace('"', "'")
 
 
-def get_data(definitions_received: List[Dict] | str | None,
-             prompts_received: List[Dict] | str | None,
-             output_received: str | None) -> Tuple[List[Dict], List[Dict], str]:
+def get_data(input_definitions: List[Dict] | str | None,
+             input_prompt: List[Dict] | str | None,
+             output_file: str | None) -> Tuple[List[Dict], List[Dict], str]:
     """
     Get the definition of the functions, prompts for the LLM
     and path to output the result.
@@ -106,53 +105,54 @@ def get_data(definitions_received: List[Dict] | str | None,
     """
     try:
         # Checking definitions
-        if type(definitions_received) is list:
+        if type(input_definitions) is list:
             try:
                 # Check if json is valid.
-                json.dumps(definitions_received)
-                definitions = definitions_received
+                json.dumps(input_definitions)
+                definitions = input_definitions
             except json.JSONDecodeError as err:
                 raise Exception(f"Error enconding definitions: {err}")
         else:
-            if definitions_received is None:
+            if input_definitions is None:
                 definitions = check_input_file(
                     "data/input/functions_definition.json")
-            elif type(definitions_received) is str:
-                definitions = check_input_file(definitions_received)
+            elif type(input_definitions) is str:
+                definitions = check_input_file(input_definitions)
             else:
                 raise TypeError("Handling definitions, wrong parameter "
-                                f"type received: '{type(definitions_received)}'")
+                                f"type received: '{type(input_definitions)}'")
         # Checking prompts
-        if type(prompts_received) is list:
+        if type(input_prompt) is list:
             try:
                 # Check if json is valid.
-                json.dumps(prompts_received)
-                prompts = prompts_received
+                json.dumps(input_prompt)
+                prompts = input_prompt
             except json.JSONDecodeError as err:
                 raise Exception(f"Error enconding prompts: {err}")
         else:
-            if prompts_received is None:
+            if input_prompt is None:
                 prompts = check_input_file(
                     "data/input/function_calling_tests.json")
-            elif type(prompts_received) is str:
-                prompts = check_input_file(prompts_received)
+            elif type(input_prompt) is str:
+                prompts = check_input_file(input_prompt)
             else:
                 raise TypeError("Handling prompts, wrong parameter "
-                                f"type received: '{type(prompts_received)}'")
+                                f"type received: '{type(input_prompt)}'")
         _validate_input_received(definitions, prompts)
     except Exception as err:
         raise err
     # Checking output permissions
     try:
-        if not output_received:
+        if not output_file:
             output = "data/output/function_calls.json"
         else:
-            output = output_received
+            output = output_file
         write_permission(output)
     except Exception as err:
         raise Exception(f"Getting data: {err}")
-    
+
     return definitions, prompts, output
+
 
 def parse_data_files() -> Tuple[List[Dict], List[Dict], str]:
     """
@@ -167,6 +167,7 @@ def parse_data_files() -> Tuple[List[Dict], List[Dict], str]:
         raise Exception(f"Parsing data files: {err}")
 
     return definitions, prompts, output
+
 
 def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
     decoded = llm.decode([logit])
@@ -208,7 +209,8 @@ def run_prompts(definitions: List[Dict],
             min_logit = min(logits)
             while True:
                 max_index = logits.index(max(logits))
-                if logit_in_str(max_index, def_str, llm) and llm.decode(logits.index(max(logits))) != " ":
+                if all((logit_in_str(max_index, def_str, llm),
+                       llm.decode(logits.index(max(logits))) != " ")):
                     break
                 logits[max_index] = min_logit
             new_token = llm.decode(logits.index(max(logits)))
@@ -237,17 +239,17 @@ def run_prompts(definitions: List[Dict],
             min_logit = min(logits)
             if new_token == " ":
                 logits[logits.index(max(logits))] = min_logit
-            if params.endswith('":'):#
+            if params.endswith('":'):
                 params += ' "'
                 tokens = llm.encode(def_str + result + params).tolist()[0]
                 logits = llm.get_logits_from_input_ids(tokens)
                 while True:
                     max_index = logits.index(max(logits))
-                    if logit_in_str(max_index, result, llm) and llm.decode(logits.index(max(logits))) != " ":
+                    if all((logit_in_str(max_index, result, llm),
+                           llm.decode(logits.index(max(logits))) != " ")):
                         break
                     logits[max_index] = min_logit
             params += llm.decode(logits.index(max(logits)))
-            #print(params)
             if params.count("{") + 1 == params.count("}"):
                 return params
             tokens = llm.encode(def_str + result + params).tolist()[0]
@@ -265,21 +267,24 @@ def run_prompts(definitions: List[Dict],
         definitions_str = str(definitions)
         result: List[Dict] = []
         for prompt in prompts:
+            if prompt['prompt'] == "":
+                continue
             print(f"Running prompt: '{prompt['prompt']}'")
             current_res = ""
             current_res += '{"prompt": "' + prompt['prompt'] + '", '
             current_res += get_name(definitions_str,
                                     current_res, llm)
-            print(" function name found...", end="", flush=True)
+            print("function name found...", end="", flush=True)
             current_res += get_parameters(definitions_str, current_res, llm)
             print(" function parameters found...", end="", flush=True)
             result.append(json.loads(current_res))
-            print(f" valid json.")
+            print(" valid json.")
 
     except Exception as err:
         print(f"Running LLM: {err}\nCurrent result:\n{current_res}")
 
     return result
+
 
 def export_result(result: List[Dict], output: str) -> None:
     """

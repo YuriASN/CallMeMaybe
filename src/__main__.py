@@ -1,5 +1,4 @@
 from . import function_finder as find
-import json
 
 try:
     data = find.parse_data_files()
