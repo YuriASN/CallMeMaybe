@@ -46,10 +46,50 @@ The Results given will be:
 from .argument_parser import parse_files, write_permission, check_input_file
 from typing import Dict, List, Tuple
 from pathlib import Path
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore [attr-defined]
+from colorama import Fore, Style
 import json
 import sys
 import os
+
+
+def _get_definition(definitions: List[Dict], funct_name: str) -> Dict:
+    """
+    Finds the function definition in a list of definitions and returns it.
+
+    Args:
+        definitions: List with all function definitions.
+        funct_name: The name of the function to be returned.
+
+    Return:
+        A dict with the function definition.
+        Raise an error if function is not found.
+    """
+    for funct in definitions:
+        if funct["name"] == funct_name:
+            return funct
+
+    raise KeyError(f"In _get_definition(): {funct_name} not found.")
+
+
+def _param_type(definition: Dict, param: str) -> str:
+    """
+    Finds the funct_name on the definitions list and return the type of
+    the param on it.
+
+    Args:
+        definition: Dict of function definition.
+        param: Parameter name of that function to return it's type.
+
+    Return:
+        The type of the given parameter.
+        Raise error if parameter not found.
+    """
+    for key, value in definition["parameters"].items():
+        if key == param:
+            return value["type"]
+    raise KeyError(f"In _param_type() on function {definition['name']}: "
+                   f"Parameter: {param} not found.")
 
 
 def _validate_input_received(definitions: List[Dict],
@@ -190,12 +230,13 @@ def run_prompts(definitions: List[Dict],
         prompts: The prompts to ask for the LLM.
         output: The str with the path to the file to be outputed on.
     """
-    def get_name(def_str: str, result: str, llm: Small_LLM_Model) -> str:
+    def get_name(definitions: List[Dict], result: str,
+                 llm: Small_LLM_Model) -> str:
         """
         Get the name of the function constraining the json format.
 
         Args:
-            def_str: The definitions of the functions to search on.
+            definitions: The definitions of the functions to search on.
             result: Current llm prompt as will go to the output.
             llm: The llm being used.
         Return:
@@ -203,6 +244,7 @@ def run_prompts(definitions: List[Dict],
             contrained to a json format.
         """
         name = '"name": "fn'
+        def_str = str(definitions)
         tokens = llm.encode(def_str + result + name).tolist()[0]
         while True:
             logits = llm.get_logits_from_input_ids(tokens)
@@ -219,40 +261,58 @@ def run_prompts(definitions: List[Dict],
                 return name
             tokens = llm.encode(def_str + result + name).tolist()[0]
 
-    def get_parameters(def_str: str, result: str, llm: Small_LLM_Model) -> str:
+    def get_parameters(definition: Dict, result: str,
+                       llm: Small_LLM_Model) -> str:
         """
         Get the parameters of the function with the value passed on the prompt.
 
         Args:
-            def_str: The definitions of the functions to search on.
+            definition: The definition of the function to search parameters on.
             result: Current llm call and responses.
             llm: The llm being used.
         Return:
             The concactenation of last result and the parameters of the
             function constrained to a json format.
         """
-        params = ' "parameters": {"'
-        tokens = llm.encode(def_str + result + params).tolist()[0]
-        while True:
-            logits = llm.get_logits_from_input_ids(tokens)
-            new_token = llm.decode(logits.index(max(logits)))
-            min_logit = min(logits)
-            if new_token == " ":
-                logits[logits.index(max(logits))] = min_logit
-            if params.endswith('":'):
-                params += ' "'
-                tokens = llm.encode(def_str + result + params).tolist()[0]
-                logits = llm.get_logits_from_input_ids(tokens)
-                while True:
-                    max_index = logits.index(max(logits))
-                    if all((logit_in_str(max_index, result, llm),
-                           llm.decode(logits.index(max(logits))) != " ")):
-                        break
-                    logits[max_index] = min_logit
-            params += llm.decode(logits.index(max(logits)))
-            if params.count("{") + 1 == params.count("}"):
-                return params
+        try:
+            params = ' "parameters": {"'
+            def_str = str(definition)
             tokens = llm.encode(def_str + result + params).tolist()[0]
+            while True:
+                logits = llm.get_logits_from_input_ids(tokens)
+                new_token = llm.decode(logits.index(max(logits)))
+                min_logit = min(logits)
+                if new_token == " ":
+                    logits[logits.index(max(logits))] = min_logit
+                if params.endswith('":'):
+                    params += ' '
+                    last_quote = params.rfind('"')
+                    prev_quote = params[:last_quote].rfind('"')
+                    last_param = params[prev_quote + 1:last_quote]
+                    param_type = _param_type(definition, last_param)
+                    if param_type == "str":
+                        params += '"'
+                    tokens = llm.encode(def_str + result + params).tolist()[0]
+                    logits = llm.get_logits_from_input_ids(tokens)
+                    while True:
+                        max_index = logits.index(max(logits))
+                        if param_type in ("int", "float", "number"):
+                            if llm.decode(logits.index(max(logits))).isdigit():
+                                break
+                        elif all(
+                            (logit_in_str(max_index, result, llm),
+                             llm.decode(logits.index(max(logits))) != " ")):
+                            break
+                        logits[max_index] = min_logit
+                params += llm.decode(logits.index(max(logits)))
+                if params.count("{") + 1 == params.count("}"):
+                    return params
+                if params.count("{") == params.count("}"):
+                    return params[:params.rfind("}") + 1]
+                tokens = llm.encode(def_str + result + params).tolist()[0]
+        except Exception as err:
+            raise Exception(f"Getting parameters: {err}\n"
+                            f"Current parameter: {params}") from err
 
     if not definitions:
         raise NotImplementedError(
@@ -264,24 +324,26 @@ def run_prompts(definitions: List[Dict],
     try:
         llm = Small_LLM_Model()
 
-        definitions_str = str(definitions)
         result: List[Dict] = []
         for prompt in prompts:
             if prompt['prompt'] == "":
                 continue
-            print(f"Running prompt: '{prompt['prompt']}'")
-            current_res = ""
-            current_res += '{"prompt": "' + prompt['prompt'] + '", '
-            current_res += get_name(definitions_str,
-                                    current_res, llm)
+            print(f"{Fore.LIGHTBLUE_EX}Running prompt:{Style.RESET_ALL} '"
+                  f"{prompt['prompt']}'")
+            current_res: str = '{"prompt": "' + prompt['prompt'] + '", '
+            current_res += get_name(definitions, current_res, llm)
+            name: str = current_res[current_res.rfind('": "') + 4:-2]
             print("function name found...", end="", flush=True)
-            current_res += get_parameters(definitions_str, current_res, llm)
+            current_res += get_parameters(_get_definition(definitions, name),
+                                          current_res, llm)
             print(" function parameters found...", end="", flush=True)
-            result.append(json.loads(current_res))
-            print(" valid json.")
+            current_dict: Dict = json.loads(current_res)
+            result.append(current_dict)
+            print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
 
     except Exception as err:
-        print(f"Running LLM: {err}\nCurrent result:\n{current_res}")
+        raise Exception(f"Running LLM: {err}\nCurrent result:\n\t"
+                        f"{current_res}") from err
 
     return result
 
