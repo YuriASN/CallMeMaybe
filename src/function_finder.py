@@ -313,6 +313,9 @@ def run_prompts(definitions: List[Dict],
         except Exception as err:
             raise Exception(f"Getting parameters: {err}\n"
                             f"Current parameter: {params}") from err
+        except KeyboardInterrupt as interr:
+            raise Exception("Interrupted runnning LLM\nCurrent result:"
+                            f"\n\t'{params}'") from interr
 
     if not definitions:
         raise NotImplementedError(
@@ -337,13 +340,17 @@ def run_prompts(definitions: List[Dict],
             current_res += get_parameters(_get_definition(definitions, name),
                                           current_res, llm)
             print(" function parameters found...", end="", flush=True)
+            while current_res.count("{") > current_res.count("}"):
+                current_res += "}"
             current_dict: Dict = json.loads(current_res)
             result.append(current_dict)
             print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
 
+    except KeyboardInterrupt as interr:
+        raise interr
     except Exception as err:
         raise Exception(f"Running LLM: {err}\nCurrent result:\n\t"
-                        f"{current_res}") from err
+                        f"'{current_res}'") from err
 
     return result
 
