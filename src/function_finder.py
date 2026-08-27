@@ -48,6 +48,7 @@ from typing import Dict, List, Tuple
 from pathlib import Path
 from llm_sdk import Small_LLM_Model  # type: ignore [attr-defined]
 from colorama import Fore, Style
+from .timeit import time_it
 import json
 import sys
 import os
@@ -124,8 +125,8 @@ def _validate_input_received(definitions: List[Dict],
             if key != "prompt":
                 raise KeyError(
                     f"Key '{key}' is invalid for a prompt.")
-        # Check if prompt has " and change for '
-        each['prompt'] = each['prompt'].replace('"', "'")
+        # Check if prompt has " and change for \""
+        each['prompt'] = each['prompt'].replace('"', '\\"')
 
 
 def get_data(input_definitions: List[Dict] | str | None,
@@ -220,7 +221,8 @@ def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
 
 def run_prompts(definitions: List[Dict],
                 prompts: List[Dict],
-                output: str) -> List[Dict]:
+                output: str,
+                model_name: str = "Qwen/Qwen3-0.6B") -> List[Dict]:
     """
     Call the LLM to solve prompt by prompt from the list.
     Saving everything on the result string.
@@ -230,6 +232,7 @@ def run_prompts(definitions: List[Dict],
         prompts: The prompts to ask for the LLM.
         output: The str with the path to the file to be outputed on.
     """
+    @time_it
     def get_name(definitions: List[Dict], result: str,
                  llm: Small_LLM_Model) -> str:
         """
@@ -243,9 +246,11 @@ def run_prompts(definitions: List[Dict],
             The concactenation of last result and the name of the function
             contrained to a json format.
         """
-        name = '"name": "fn'
+        name = '"name": "fn'# remove fn ??? what if test doesn't have
         def_str = str(definitions)
-        tokens = llm.encode(def_str + result + name).tolist()[0]
+        prompt = "Find the function to solve the prompt using " \
+                  "these definitions. "
+        tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
         while True:
             logits = llm.get_logits_from_input_ids(tokens)
             min_logit = min(logits)
@@ -259,8 +264,9 @@ def run_prompts(definitions: List[Dict],
             name += new_token
             if name.endswith('",'):
                 return name
-            tokens = llm.encode(def_str + result + name).tolist()[0]
+            tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
 
+    @time_it
     def get_parameters(definition: Dict, result: str,
                        llm: Small_LLM_Model) -> str:
         """
@@ -276,7 +282,8 @@ def run_prompts(definitions: List[Dict],
         """
         try:
             params = ' "parameters": {"'
-            def_str = str(definition)
+            prompt = ""
+            def_str = prompt + str(definition)
             tokens = llm.encode(def_str + result + params).tolist()[0]
             while True:
                 logits = llm.get_logits_from_input_ids(tokens)
@@ -314,7 +321,7 @@ def run_prompts(definitions: List[Dict],
             raise Exception(f"Getting parameters: {err}\n"
                             f"Current parameter: {params}") from err
         except KeyboardInterrupt as interr:
-            raise Exception("Interrupted runnning LLM\nCurrent result:"
+            raise Exception("Interrupted getting parameters\nCurrent params:"
                             f"\n\t'{params}'") from interr
 
     if not definitions:
@@ -325,7 +332,7 @@ def run_prompts(definitions: List[Dict],
     if not output:
         raise NotImplementedError("No file to store the output.")
     try:
-        llm = Small_LLM_Model()
+        llm = Small_LLM_Model(model_name)
 
         result: List[Dict] = []
         for prompt in prompts:
@@ -334,23 +341,34 @@ def run_prompts(definitions: List[Dict],
             print(f"{Fore.LIGHTBLUE_EX}Running prompt:{Style.RESET_ALL} '"
                   f"{prompt['prompt']}'")
             current_res: str = '{"prompt": "' + prompt['prompt'] + '", '
-            current_res += get_name(definitions, current_res, llm)
+            run_time: float = 0
+            res_name, run_time = get_name(definitions, current_res, llm)
+            current_res += res_name
             name: str = current_res[current_res.rfind('": "') + 4:-2]
-            print("function name found...", end="", flush=True)
-            current_res += get_parameters(_get_definition(definitions, name),
-                                          current_res, llm)
-            print(" function parameters found...", end="", flush=True)
+            print(f"function name found in {run_time}s...", end="", flush=True)
+            run_time = 0
+            res_param, run_time = get_parameters(_get_definition(
+                definitions, name),
+                current_res, llm)
+            current_res += res_param
+            print(f" function parameters found in {run_time}s...",
+                  end="", flush=True)
             while current_res.count("{") > current_res.count("}"):
                 current_res += "}"
-            current_dict: Dict = json.loads(current_res)
-            result.append(current_dict)
-            print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
+            try:
+                current_dict: Dict = json.loads(current_res)
+            except json.JSONDecodeError as err:
+                print(
+                    f"\n{Fore.RED}Ivalid json output: {err}{Style.RESET_ALL}")
+            else:
+                result.append(current_dict)
+                print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
 
-    except KeyboardInterrupt as interr:
-        raise interr
     except Exception as err:
         raise Exception(f"Running LLM: {err}\nCurrent result:\n\t"
                         f"'{current_res}'") from err
+    except KeyboardInterrupt as interr:
+        raise Exception(f"Runnning LLM: {interr.args[0]}")
 
     return result
 
