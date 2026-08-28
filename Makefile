@@ -1,4 +1,4 @@
-EXCLUDES = --exclude .venv --exclude src/llm_sdk/*
+EXCLUDES = --exclude 'llm_sdk/','.venv/'
 
 install:
 	uv sync
@@ -10,9 +10,9 @@ clean:
 	find . -type d \( -name '.mypy_cache' -o -name '__pycache__' \) -print -exec rm -rf {} +
 
 lint:
-	-flake8 --exclude "llm_sdk", ".venv"
-	-mypy --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs --exclude llm_sdk --exclude .venv
+	-flake8 $(EXCLUDES)
+	-mypy --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs $(EXCLUDES) *.py
 
 lint-strict:
-	-flake8 --strict --exclude "llm_sdk", ".venv"
-	-mypy --strict --exclude llm_sdk --exclude .venv
+	-flake8 --strict $(EXCLUDES)
+	-mypy --strict $(EXCLUDES) *.py

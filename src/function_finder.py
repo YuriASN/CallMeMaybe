@@ -88,7 +88,7 @@ def _param_type(definition: Dict, param: str) -> str:
     """
     for key, value in definition["parameters"].items():
         if key == param:
-            return value["type"]
+            return str(value["type"])
     raise KeyError(f"In _param_type() on function {definition['name']}: "
                    f"Parameter: {param} not found.")
 
@@ -246,10 +246,10 @@ def run_prompts(definitions: List[Dict],
             The concactenation of last result and the name of the function
             contrained to a json format.
         """
-        name = '"name": "fn'# remove fn ??? what if test doesn't have
+        name: str = '"name": "fn'# remove fn ??? what if test doesn't have
         def_str = str(definitions)
         prompt = "Find the function to solve the prompt using " \
-                  "these definitions. "
+                 "these definitions. "
         tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
         while True:
             logits = llm.get_logits_from_input_ids(tokens)
@@ -281,7 +281,7 @@ def run_prompts(definitions: List[Dict],
             function constrained to a json format.
         """
         try:
-            params = ' "parameters": {"'
+            params: str = ' "parameters": {"'
             prompt = ""
             def_str = prompt + str(definition)
             tokens = llm.encode(def_str + result + params).tolist()[0]

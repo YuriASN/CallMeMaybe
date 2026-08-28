@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 def time_it(func: Callable) -> Callable:
     @wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
+    def wrapper(*args: int, **kwargs: int) -> Any:
         start = time()
         result = func(*args, **kwargs)
         end = time()

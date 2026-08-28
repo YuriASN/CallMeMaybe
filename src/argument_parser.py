@@ -16,7 +16,7 @@ def check_input_file(input_file: str) -> List[Dict]:
     """
     try:
         with open(input_file) as file:
-            result = json.load(file)
+            result: List[Dict] = json.load(file)
     except json.JSONDecodeError as err:
         raise Exception("Error enconding definitions from file "
                         f"'{input_file}': {err}")
