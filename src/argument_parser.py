@@ -89,11 +89,11 @@ def parse_files(argv: List[str]) -> List:
                 raise NameError(F"Invalid parameter: '{flag}'")
         write_permission(io_files["output"])
         definitions: List[Dict]
-        tests: List[Dict]
+        prompts: List[Dict]
         output = io_files["output"]
         definitions = check_input_file(io_files["functions_definition"])
-        tests = check_input_file(io_files["input"])
+        prompts = check_input_file(io_files["input"])
     except Exception as err:
         raise Exception(f"Parsing files: {err}")
 
-    return [definitions, tests, output]
+    return [definitions, prompts, output]
