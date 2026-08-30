@@ -7,7 +7,7 @@ prompt received. In case no data or files are passed as parameters, the default
 will be used:
     definitions: data/input/functions_definition.json
     prompts: data/input/function_calling_tests.json
-    output: data/output/function_calls.json
+    output: data/output/function_calling_results.json
 Returns a List of dict with the prompt received, name of the function found
 and parameters of the prompt filling the ones on the function.
 
@@ -95,6 +95,16 @@ def _param_type(definition: Dict, param: str) -> str:
 
 def _validate_input_received(definitions: List[Dict],
                              prompts: List[Dict]) -> None:
+    """
+    Validate if the input is valid by searching for the necessary keys.
+    If is invalid, raise an error.
+
+    Args:
+        definitions: List of dict with the function definitions having "name",
+        "description" and "parameters" keys.
+        Each dict inside parameters has "type".
+        prompts: List of dicts with the "prompt" key.
+    """
     function_keys = ["name", "description", "parameters", "returns"]
     for each in definitions:
         # Check if all needed keys are on the definition
@@ -143,6 +153,10 @@ def get_data(input_definitions: List[Dict] | str | None,
         prompts: List of dict with prompts for the LLM to search for a
         function to be used or string with file path.
         output: String with the path of file to save the result.
+    
+    Return:
+        Tuple with the list of dict for the definitions, list of dict for
+        the prompts, and string with the file for the output.
     """
     try:
         # Checking definitions
@@ -185,7 +199,7 @@ def get_data(input_definitions: List[Dict] | str | None,
     # Checking output permissions
     try:
         if not output_file:
-            output = "data/output/function_calls.json"
+            output = "data/output/function_calling_results.json"
         else:
             output = output_file
         write_permission(output)
@@ -195,22 +209,18 @@ def get_data(input_definitions: List[Dict] | str | None,
     return definitions, prompts, output
 
 
-def parse_data_files() -> Tuple[List[Dict], List[Dict], str]:
-    """
-    Parse the definitions, inputs and output from
-    files passed as parameters on sys args.
-    Or uses default files if a parameter isn't passed.
-    """
-    try:
-        definitions, prompts, output = parse_files(sys.argv)
-        _validate_input_received(definitions, prompts)
-    except Exception as err:
-        raise Exception(f"Parsing data files: {err}")
-
-    return definitions, prompts, output
-
-
 def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
+    """
+    Checks if the ligit is part of the given string.
+
+    Args:
+        logit: The logit to decode and search for.
+        string: The string to search the logit on.
+        llm: The LLM model being used.
+    
+    Return:
+        True if the logit is there, False if not.
+    """
     decoded = llm.decode([logit])
     if decoded in string:
         return True
@@ -231,6 +241,10 @@ def run_prompts(definitions: List[Dict],
         definitions: The List of Dicts with the functions available for use.
         prompts: The prompts to ask for the LLM.
         output: The str with the path to the file to be outputed on.
+
+    Return:
+        A list of dicts with the solution for the prompts, having the
+        "prompt", "name" and "parameters" keys.
     """
     @time_it
     def get_name(definitions: List[Dict], result: str,
@@ -242,12 +256,13 @@ def run_prompts(definitions: List[Dict],
             definitions: The definitions of the functions to search on.
             result: Current llm prompt as will go to the output.
             llm: The llm being used.
+
         Return:
-            The concactenation of last result and the name of the function
+            The concactenation of last result with the name of the function
             contrained to a json format.
         """
         name: str = '"name": "fn'# remove fn ??? what if test doesn't have
-        def_str = str(definitions)
+        def_str = str(definitions)# send only the name and definitions? if so, fix the design decisions and performance on the readme
         prompt = "Find the function to solve the prompt using " \
                  "these definitions. "
         tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
@@ -276,16 +291,17 @@ def run_prompts(definitions: List[Dict],
             definition: The definition of the function to search parameters on.
             result: Current llm call and responses.
             llm: The llm being used.
+
         Return:
-            The concactenation of last result and the parameters of the
+            The concactenation of last result with the parameters of the
             function constrained to a json format.
         """
         try:
             params: str = ' "parameters": {"'
-            prompt = ""
+            prompt = ""# what to write here
             def_str = prompt + str(definition)
             tokens = llm.encode(def_str + result + params).tolist()[0]
-            while True:
+            while True:# maybe change to write the parameter name using the definition and have the LLM to fill only the value. Faster program? If so update the design decisions and performance on the readme
                 logits = llm.get_logits_from_input_ids(tokens)
                 new_token = llm.decode(logits.index(max(logits)))
                 min_logit = min(logits)
@@ -376,9 +392,13 @@ def run_prompts(definitions: List[Dict],
 def export_result(result: List[Dict], output: str) -> None:
     """
     Export the result to a json file.
+
+    Args:
+        result: A list of dicts with the result of the LLM calls.
+        output: The file to output the result using the json module.
     """
     try:
-        if (output == "data/output/function_calls.json"
+        if (output == "data/output/function_calling_results.json"
                 and not Path("data/output")):
             os.mkdir("data/output")
         with open(output, "w") as file:

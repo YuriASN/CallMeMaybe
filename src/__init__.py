@@ -1,7 +1,7 @@
-from .function_finder import parse_data_files, run_prompts, export_result
+from .function_finder import get_data, run_prompts, export_result
 
 __all__ = [
-    "parse_data_files",
+    "get_data",
     "run_prompts",
     "export_result"
 ]
