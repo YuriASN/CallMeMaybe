@@ -35,7 +35,7 @@ def write_permission(file: str) -> None:
         file: String with the path for the file.
     """
     pfile = Path(file)
-    if (file == "data/output/function_calls.json"):
+    if (file == "data/output/function_calling_results.json"):
         if (
             not Path("data").exists()
             or not os.access(Path("data"), os.W_OK)
