@@ -13,6 +13,14 @@ make install
 # Creates a virtual environment installing all the dependencies there using 'uv'.
 ```
 
+*On 42's PCs we don't have enough space for this project, so we have to install setting the cache location to sgoinfre along with huggingface's cache.*
+
+```bash
+mkdir -p prog_cache/uv prog_cache/huggingface
+uv sync --cache-dir prog_cache/uv
+export HF_HOME=prog_cache/hugginface
+```
+
 ```bash
 make run
 # Runs the the main on the virtual environment using 'uv'.
