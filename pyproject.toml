@@ -11,6 +11,7 @@ dependencies = [
     "mypy>=2.1.0",
     "numpy>=2.2.6",
     "pydantic>=2.13.4",
+    "types-colorama>=0.4.15.20260508",
 ]
 
 [tool.uv.workspace]
