@@ -43,14 +43,13 @@ The Results given will be:
 ]
 """
 
-from .argument_parser import parse_files, write_permission, check_input_file
+from .argument_parser import write_permission, check_input_file
 from typing import Dict, List, Tuple
 from pathlib import Path
 from llm_sdk import Small_LLM_Model  # type: ignore [attr-defined]
 from colorama import Fore, Style
 from .timeit import time_it
 import json
-import sys
 import os
 
 
@@ -153,7 +152,7 @@ def get_data(input_definitions: List[Dict] | str | None,
         prompts: List of dict with prompts for the LLM to search for a
         function to be used or string with file path.
         output: String with the path of file to save the result.
-    
+
     Return:
         Tuple with the list of dict for the definitions, list of dict for
         the prompts, and string with the file for the output.
@@ -217,7 +216,7 @@ def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
         logit: The logit to decode and search for.
         string: The string to search the logit on.
         llm: The LLM model being used.
-    
+
     Return:
         True if the logit is there, False if not.
     """
@@ -247,39 +246,46 @@ def run_prompts(definitions: List[Dict],
         "prompt", "name" and "parameters" keys.
     """
     @time_it
-    def get_name(definitions: List[Dict], result: str,
+    def get_name(definitions: List[Dict], res: str,
                  llm: Small_LLM_Model) -> str:
         """
         Get the name of the function constraining the json format.
 
         Args:
             definitions: The definitions of the functions to search on.
-            result: Current llm prompt as will go to the output.
+            res: Current llm prompt result as will go to the output.
             llm: The llm being used.
 
         Return:
             The concactenation of last result with the name of the function
             contrained to a json format.
         """
-        name: str = '"name": "fn'# remove fn ??? what if test doesn't have
-        def_str = str(definitions)# send only the name and definitions? if so, fix the design decisions and performance on the readme
-        prompt = "Find the function to solve the prompt using " \
-                 "these definitions. "
-        tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
-        while True:
-            logits = llm.get_logits_from_input_ids(tokens)
-            min_logit = min(logits)
+        try:
+            name: str = '"name": "fn'# remove fn ??? what if test doesn't have
+            def_str = str(definitions)# send only the name and definitions? if so, fix the design decisions and performance on the readme
+            prompt = "Find the function to solve the prompt using " \
+                     "these definitions. "
+            tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
             while True:
-                max_index = logits.index(max(logits))
-                if all((logit_in_str(max_index, def_str, llm),
-                       llm.decode(logits.index(max(logits))) != " ")):
-                    break
-                logits[max_index] = min_logit
-            new_token = llm.decode(logits.index(max(logits)))
-            name += new_token
-            if name.endswith('",'):
-                return name
-            tokens = llm.encode(prompt + def_str + result + name).tolist()[0]
+                logits = llm.get_logits_from_input_ids(tokens)
+                min_logit = min(logits)
+                while True:
+                    max_index = logits.index(max(logits))
+                    if all((logit_in_str(max_index, def_str, llm),
+                            llm.decode(logits.index(max(logits))) != " ")):
+                        break
+                    logits[max_index] = min_logit
+                new_token = llm.decode(logits.index(max(logits)))
+                name += new_token
+                if name.endswith('",'):
+                    return name
+                tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
+        except Exception as err:
+            raise Exception(f"Getting name: {err}\n"
+                            f"Current name: {name}") from err
+        except KeyboardInterrupt as interr:
+            raise Exception("Interrupted getting name\nCurrent name:\n"
+                            f"\t'{name}'") from interr
 
     @time_it
     def get_parameters(definition: Dict, result: str,
@@ -347,6 +353,7 @@ def run_prompts(definitions: List[Dict],
         raise NotImplementedError("The prompts weren't loaded.")
     if not output:
         raise NotImplementedError("No file to store the output.")
+    current_res: str = ""
     try:
         llm = Small_LLM_Model(model_name)
 
@@ -356,7 +363,7 @@ def run_prompts(definitions: List[Dict],
                 continue
             print(f"{Fore.LIGHTBLUE_EX}Running prompt:{Style.RESET_ALL} '"
                   f"{prompt['prompt']}'")
-            current_res: str = '{"prompt": "' + prompt['prompt'] + '", '
+            current_res = '{"prompt": "' + prompt['prompt'] + '", '
             run_time: float = 0
             res_name, run_time = get_name(definitions, current_res, llm)
             current_res += res_name
@@ -399,7 +406,7 @@ def export_result(result: List[Dict], output: str) -> None:
     """
     try:
         if (output == "data/output/function_calling_results.json"
-                and not Path("data/output")):
+                and not Path("data/output").exists()):
             os.mkdir("data/output")
         with open(output, "w") as file:
             json.dump(result, file, indent=4)
