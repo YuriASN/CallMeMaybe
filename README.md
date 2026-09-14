@@ -54,8 +54,8 @@ After each prompt is solved, the string is converted to a dict and added to the 
 
 ## Design decisions
 
-Although LLMs works with strings, I decide to use the list of dicts through most of the program. That way I could access and convert only a single function definition when getting the parameters, and with that reduce the amount of tokens used on the LLM.  
-The conversion of the string to dict done for each prompt -instead of creating a list as a string- was done so that we can find if that prompt is a valid json and if not just ignore it.  
+Although LLMs works with strings, I decide to use the list of dicts through most of the program. That way I could access and convert only a single function definition when getting the parameters, and with that reduce the amount of tokens used on the LLM improving it's performance.  
+The conversion of the string to dict done for each prompt -instead of creating a list as a string- was done so that we can find if that prompt is a valid json and if not just ignore it. Even during usage only the needed information on the definitions are passed.  
 
 An extra step was done where the module can also take function definitions and prompts directly or passing the file name. On a hierarchy it goes from a parameter passed to the module, to the system args and by last the default files. This was done so that the module can be used by other programs that might have the data instead of always using files.  
 
@@ -63,6 +63,11 @@ An extra step was done where the module can also take function definitions and p
 
 The way the constraining was done it makes the json structure and content 100% reliable, although if a prompt asks for something that doesn't have a function for it, it'll give a random answer for it.  
 By leaving the `fn` to find a function and passing only 1 function for the parameters, we use less tokens and therefore process everything faster.  
+During tests the parameters passed for the LLM were reduced to make everything faster:  
+- Function name: The LLM receives only the function name and description to choose which function will be the best for use.  
+- Function parameters: In that case only the definitions of the parameter of the function previously chosen will be passed. And the parameter name is already filled, having the LLM to fill only it's value.  
+
+After those changes the processing time was reduced in about 40%.  
 
 ## Challenges faced:
 
