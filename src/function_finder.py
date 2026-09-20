@@ -56,45 +56,43 @@ import os
 min_float = -np.finfo(np.float64).max
 
 
-def _get_parameters(definitions: List[Dict[str, Dict]], f_name: str) -> Dict:
+def _get_definition(definitions: List[Dict], funct_name: str) -> Dict:
     """
-    Finds the function parameters in a list of definitions and returns it.
-    Using only the function parameters helps to reduce time and tokens usage.
+    Finds the function definition in a list of definitions and returns it.
 
     Args:
         definitions: List with all function definitions.
-        f_name: The name of the function to be returned.
+        funct_name: The name of the function to be returned.
 
     Return:
-        A dict with the function parameters definition.
+        A dict with the function definition.
         Raise an error if function is not found.
     """
-    try:
-        for funct in definitions:
-            if funct["name"] == f_name:
-                return funct["parameters"]
+    for funct in definitions:
+        if funct["name"] == funct_name:
+            return funct
 
-    except Exception as err:
-        raise Exception(f"In _get_definition(): {err}") from err
-
-    raise KeyError(f"In _get_definition(): {f_name} not found.")
+    raise KeyError(f"In _get_definition(): {funct_name} not found.")
 
 
-def _param_type(parameters: Dict[str, Dict[str, str]], param: str) -> str:
+def _param_type(definition: Dict, param: str) -> str:
     """
-    Finds the param on the parameters and returns it's type.
+    Finds the funct_name on the definitions list and return the type of
+    the param on it.
 
     Args:
-        parameters: Dict of parameters definition.
-        param: Parameter name of to return it's type.
+        definition: Dict of complete function definition.
+        param: Parameter name of that function to return it's type.
 
     Return:
         The type of the given parameter.
         Raise error if parameter not found.
     """
-    if param in parameters.keys():
-        return parameters[param]["type"]
-    raise KeyError(f"In _param_type(): '{param}' not found.")
+    for key, value in definition["parameters"].items():
+        if key == param:
+            return str(value["type"])
+    raise KeyError(f"In _param_type() on function {definition['name']}: "
+                   f"Parameter: {param} not found.")
 
 
 def _validate_input_received(definitions: List[Dict],
@@ -234,7 +232,7 @@ def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
 
 
 def run_prompts(definitions: List[Dict],
-                prompts: List[Dict],
+                prompts: List[Dict[str, str]],
                 output: str,
                 model_name: str = "Qwen/Qwen3-0.6B") -> List[Dict]:
     """
@@ -272,24 +270,27 @@ def run_prompts(definitions: List[Dict],
                 {key: each[key] for key in keys}
                 for each in definitions
             ]
+            names: str = ""
+            for each in definitions:
+                names = names + "," + each["name"]
             name: str = '"name": "fn'#remove fn ??? what if test doesn't have
             def_str = str(definitions)
             prompt = "Find the function to solve the prompt using " \
                      "only one of these functions. "
-            tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
             while True:
+                new_token: str = ""
+                tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
                 logits = llm.get_logits_from_input_ids(tokens)
                 while True:
                     max_index = logits.index(max(logits))
-                    if all((logit_in_str(max_index, def_str, llm),
-                            llm.decode(logits.index(max(logits))) != " ")):
+                    new_token = llm.decode(logits.index(max(logits)))
+                    if all((logit_in_str(max_index, names, llm),
+                            new_token != " ")):
                         break
                     logits[max_index] = min_float
-                new_token = llm.decode(logits.index(max(logits)))
                 name += new_token
                 if name.endswith('",'):
                     return name
-                tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
         except Exception as err:
             raise Exception(f"Getting name: {err}\n"
                             f"Current name: {name}") from err
@@ -298,14 +299,14 @@ def run_prompts(definitions: List[Dict],
                             f"\t'{name}'") from interr
 
     @time_it
-    def get_parameters(parameters: Dict, result: str,
+    def get_parameters(definition: Dict, res: str,
                        llm: Small_LLM_Model) -> str:
         """
         Get the parameters of the function with the value passed on the prompt.
 
         Args:
-            parameters: The parameters of the function.
-            result: Current llm call and responses.
+            definition: The definition of the function to search parameters on.
+            res: Current llm call and responses.
             llm: The llm being used.
 
         Return:
@@ -313,53 +314,56 @@ def run_prompts(definitions: List[Dict],
             function constrained to a json format.
         """
         try:
-            keys: list = list(parameters.keys())
+            # List with the name of all function parameters
+            keys = list(definition["parameters"].keys())
             i = 1
-            params: str = ' "parameters": {"' + f'{keys[i - 1]}":'
-            def_str = "parameters: " + str(parameters) + "\n" + result
-            tokens = llm.encode(def_str + params).tolist()[0]
+            params: str = ' "parameters": { ' + f'"{keys[0]}":'
+            param_type: str = _param_type(definition, keys[0])
+            if param_type in ["string", "str"]:
+                params += ' "'
+            prompt: str = ""
+            defs = str(definition)
             while True:
-                prompt: str = ""
-                if params.endswith(","):
-                    # Fills the next parameter name
+                new_token: str = ""
+                if params.endswith(','):
+                    # Read new parameter from the definitions
                     if i < len(keys):
-                        params = params + f' "{keys[i]}":'
+                        params += f' "{keys[i]}": '
+                        param_type = _param_type(
+                            definition, keys[i])
+                        if param_type in ["string", "str"]:
+                            params += '"'
                         i = i + 1
                     else:
                         return params[:params.rfind(",")]
-                logits = llm.get_logits_from_input_ids(tokens)
-                if llm.decode(logits.index(max(logits))) == " ":
-                    logits[logits.index(max(logits))] = min_float
-                if params.endswith('":'):
-                    params += ' '
-                    last_quote = params.rfind('"')
-                    prev_quote = params[:last_quote].rfind('"')
-                    last_param = params[prev_quote + 1:last_quote]
-                    param_type = _param_type(parameters, last_param)
-                    if param_type in ["string", "str"]:
-                        params += ' "'
-                        if last_param.find("source") != -1:
-                            prompt = "Don't solve the prompt, just fill the parameters. Source parameters are a exact copy of what's on the prompt. "
-                        else:
-                            prompt = "Don't solve the prompt, just fill the parameters. Parameters have to be what's asked on the prompt, no extra characters should be added. "
-                    tokens = llm.encode(prompt + def_str + params).tolist()[0]
+                # LLM call to find next token
+                while True:
+                    tokens = llm.encode(prompt + defs + res + params).tolist()[0]
                     logits = llm.get_logits_from_input_ids(tokens)
+                    # Constraining the logits
                     while True:
                         max_index = logits.index(max(logits))
+                        new_token = llm.decode(max_index)
                         if param_type in ("int", "float", "number"):
-                            if llm.decode(logits.index(max(logits))).isdigit():
+                            if new_token.isdigit() or new_token in ["}", ","]:
                                 break
-                        elif all(
-                            (logit_in_str(max_index, result, llm),
-                             llm.decode(logits.index(max(logits))) != " ")):
+                        elif new_token != " ":
                             break
                         logits[max_index] = min_float
-                params += llm.decode(logits.index(max(logits)))
+                    params += new_token
+                    if params[-1]  in ["}", '"', ","]:
+                        break
+                # If it's the end of the parameters
+                if i == len(keys):
+                    if params.endswith(','):
+                        return params[:params.rfind(",")]
+                    return params
                 if params.count("{") + 1 == params.count("}"):
+                    print(f"{Style.BRIGHT}{Fore.MAGENTA}\nWTF{Style.RESET_ALL}")
                     return params
                 if params.count("{") == params.count("}"):
+                    print(f"{Style.BRIGHT}{Fore.MAGENTA}\nWTF{Style.RESET_ALL}")
                     return params[:params.rfind("}") + 1]
-                tokens = llm.encode(def_str + params).tolist()[0]
         except Exception as err:
             raise Exception(f"Getting parameters: {err}\n"
                             f"Current parameter: {params}") from err
@@ -379,19 +383,22 @@ def run_prompts(definitions: List[Dict],
         llm = Small_LLM_Model(model_name)
 
         result: List[Dict] = []
-        for prompt in prompts:
-            if prompt['prompt'] == "":
+        for each in prompts:
+            prompt = each["prompt"]
+            if prompt == "" or prompt.isspace():
+                print(f"{Fore.LIGHTRED_EX}Prompt '{prompt}' is empty."
+                      f"{Style.RESET_ALL}")
                 continue
             print(f"{Fore.LIGHTBLUE_EX}Running prompt:{Style.RESET_ALL} '"
-                  f"{prompt['prompt']}'")
-            current_res = '{"prompt": "' + prompt['prompt'] + '", '
+                  f"{prompt}'")
+            current_res = '{"prompt": "' + prompt + '", '
             run_time: float = 0
             res_name, run_time = get_name(definitions, current_res, llm)
             current_res += res_name
             name: str = current_res[current_res.rfind('": "') + 4:-2]
             print(f"function name found in {run_time}s...", end="", flush=True)
             run_time = 0
-            res_param, run_time = get_parameters(_get_parameters(
+            res_param, run_time = get_parameters(_get_definition(
                 definitions, name),
                 current_res, llm)
             current_res += res_param
@@ -402,9 +409,8 @@ def run_prompts(definitions: List[Dict],
             try:
                 current_dict: Dict = json.loads(current_res)
             except json.JSONDecodeError as err:
-                print(
-                    f"\n{Fore.RED}Ivalid json output: {err}\n"
-                    f"Invalid result:\n\t{current_res}{Style.RESET_ALL}")
+                print(f"\n{Fore.RED}Ivalid json output: {err}"
+                      f"Output:\n\t{current_res}{Style.RESET_ALL}")
             else:
                 result.append(current_dict)
                 print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
