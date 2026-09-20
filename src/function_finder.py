@@ -56,6 +56,16 @@ import os
 min_float = -np.finfo(np.float64).max
 
 
+def percentage_bar(success: int, total: int) -> str:
+    width = 40
+    percentage = success / total
+    filled = int(width * percentage)
+
+    bar = "█" * filled + "░" * (width - filled)
+
+    return f"[{bar}] {percentage:6.2%}"
+
+
 def _get_definition(definitions: List[Dict], funct_name: str) -> Dict:
     """
     Finds the function definition in a list of definitions and returns it.
@@ -358,12 +368,6 @@ def run_prompts(definitions: List[Dict],
                     if params.endswith(','):
                         return params[:params.rfind(",")]
                     return params
-                if params.count("{") + 1 == params.count("}"):
-                    print(f"{Style.BRIGHT}{Fore.MAGENTA}\nWTF{Style.RESET_ALL}")
-                    return params
-                if params.count("{") == params.count("}"):
-                    print(f"{Style.BRIGHT}{Fore.MAGENTA}\nWTF{Style.RESET_ALL}")
-                    return params[:params.rfind("}") + 1]
         except Exception as err:
             raise Exception(f"Getting parameters: {err}\n"
                             f"Current parameter: {params}") from err
@@ -378,6 +382,8 @@ def run_prompts(definitions: List[Dict],
         raise NotImplementedError("The prompts weren't loaded.")
     if not output:
         raise NotImplementedError("No file to store the output.")
+    fails = 0
+    success = 0
     current_res: str = ""
     try:
         llm = Small_LLM_Model(model_name)
@@ -411,9 +417,16 @@ def run_prompts(definitions: List[Dict],
             except json.JSONDecodeError as err:
                 print(f"\n{Fore.RED}Ivalid json output: {err}"
                       f"Output:\n\t{current_res}{Style.RESET_ALL}")
+                fails += 1
             else:
                 result.append(current_dict)
                 print(f" {Fore.LIGHTGREEN_EX}valid json.{Style.RESET_ALL}")
+                success += 1
+
+        print(f"Json constraining: {percentage_bar(success, success + fails)}%"
+              f" ({success}/{success + fails})")
+        print(f"Prompts solved: {percentage_bar(success, len(prompts))}%"
+              f" ({success}/{len(prompts)})")
 
     except Exception as err:
         raise Exception(f"Running LLM: {err}\nCurrent result:\n\t"
@@ -438,5 +451,6 @@ def export_result(result: List[Dict], output: str) -> None:
             os.mkdir("data/output")
         with open(output, "w") as file:
             json.dump(result, file, indent=4)
+        print(f"{Style.BRIGHT}{Fore.GREEN}Json file saved!{Style.RESET_ALL}")
     except Exception as err:
         raise Exception(f"Writing to output: {err}")
