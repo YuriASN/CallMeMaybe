@@ -6,7 +6,7 @@ from typing import Any
 from collections.abc import Callable
 
 
-def time_it(func: Callable) -> Callable:
+def time_it(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
     def wrapper(*args: int, **kwargs: int) -> Any:
         start = time()

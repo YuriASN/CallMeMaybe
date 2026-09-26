@@ -44,7 +44,7 @@ The Results given will be:
 """
 
 from .argument_parser import write_permission, check_input_file
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 from pathlib import Path
 from llm_sdk import Small_LLM_Model  # type: ignore [attr-defined]
 from colorama import Fore, Style
@@ -66,7 +66,8 @@ def percentage_bar(success: int, total: int) -> str:
     return f"[{bar}] {percentage:6.2%}"
 
 
-def _get_definition(definitions: List[Dict], funct_name: str) -> Dict:
+def _get_definition(
+        definitions: List[Dict[str, Any]], funct_name: str) -> Dict[str, Any]:
     """
     Finds the function definition in a list of definitions and returns it.
 
@@ -85,7 +86,7 @@ def _get_definition(definitions: List[Dict], funct_name: str) -> Dict:
     raise KeyError(f"In _get_definition(): {funct_name} not found.")
 
 
-def _param_type(definition: Dict, param: str) -> str:
+def _param_type(definition: Dict[str, Any], param: str) -> str:
     """
     Finds the funct_name on the definitions list and return the type of
     the param on it.
@@ -105,8 +106,8 @@ def _param_type(definition: Dict, param: str) -> str:
                    f"Parameter: {param} not found.")
 
 
-def _validate_input_received(definitions: List[Dict],
-                             prompts: List[Dict]) -> None:
+def _validate_input_received(definitions: List[Dict[str, Any]],
+                             prompts: List[Dict[str, str]]) -> None:
     """
     Validate if the input is valid by searching for the necessary keys.
     If is invalid, raise an error.
@@ -151,9 +152,11 @@ def _validate_input_received(definitions: List[Dict],
         each['prompt'] = each['prompt'].replace('"', '\\"')
 
 
-def get_data(input_definitions: List[Dict] | str | None,
-             input_prompt: List[Dict] | str | None,
-             output_file: str | None) -> Tuple[List[Dict], List[Dict], str]:
+def get_data(input_definitions: List[Dict[str, Any]] | str | None,
+             input_prompt: List[Dict[str, str]] | str | None,
+             output_file: str | None) -> Tuple[List[Dict[str, Any]],
+                                               List[Dict[str, str]],
+                                               str]:
     """
     Get the definition of the functions, prompts for the LLM
     and path to output the result.
@@ -162,7 +165,7 @@ def get_data(input_definitions: List[Dict] | str | None,
     Args:
         definitions: List of dict with the definition of functions or
         string with file path.
-        prompts: List of dict with prompts for the LLM to search for a
+        input_prompt: List of dict with prompts for the LLM to search for a
         function to be used or string with file path.
         output: String with the path of file to save the result.
 
@@ -241,10 +244,10 @@ def logit_in_str(logit: int, string: str, llm: Small_LLM_Model) -> bool:
     return False
 
 
-def run_prompts(definitions: List[Dict],
+def run_prompts(definitions: List[Dict[str, Any]],
                 prompts: List[Dict[str, str]],
                 output: str,
-                model_name: str = "Qwen/Qwen3-0.6B") -> List[Dict]:
+                model_name: str = "Qwen/Qwen3-0.6B") -> List[Dict[str, Any]]:
     """
     Call the LLM to solve prompt by prompt from the list.
     Saving everything on the result string.
@@ -259,7 +262,7 @@ def run_prompts(definitions: List[Dict],
         "prompt", "name" and "parameters" keys.
     """
     @time_it
-    def get_name(definitions: List[Dict], res: str,
+    def get_name(definitions: List[Dict[str, Any]], res: str,
                  llm: Small_LLM_Model) -> str:
         """
         Get the name of the function constraining the json format.
@@ -283,10 +286,11 @@ def run_prompts(definitions: List[Dict],
             names: str = ""
             for each in definitions:
                 names = names + "," + each["name"]
-            name: str = '"name": "fn'#remove fn ??? what if test doesn't have
+            name: str = '"name": "fn'
             def_str = str(definitions)
             prompt = "Find the function to solve the prompt using " \
-                     "only one of these functions. If no function can solve the prompt, forget about it and just say 'null'. "
+                     "only one of these functions. If no function can solve " \
+                     "the prompt, forget about it and just say 'null'. "
             while True:
                 new_token: str = ""
                 tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
@@ -311,7 +315,7 @@ def run_prompts(definitions: List[Dict],
                             f"\t'{name}'") from interr
 
     @time_it
-    def get_parameters(definition: Dict, res: str,
+    def get_parameters(definition: Dict[str, Any], res: str,
                        llm: Small_LLM_Model) -> str:
         """
         Get the parameters of the function with the value passed on the prompt.
@@ -333,7 +337,6 @@ def run_prompts(definitions: List[Dict],
             param_type: str = _param_type(definition, keys[0])
             if param_type in ["string", "str"]:
                 params += ' "'
-            prompt: str = ""
             defs = str(definition)
             while True:
                 new_token: str = ""
@@ -350,21 +353,22 @@ def run_prompts(definitions: List[Dict],
                         return params[:params.rfind(",")]
                 # LLM call to find next token
                 while True:
-                    tokens = llm.encode(prompt + defs + res + params).tolist()[0]
+                    tokens = llm.encode(defs + res + params).tolist()[0]
                     logits = llm.get_logits_from_input_ids(tokens)
                     # Constraining the logits
                     while True:
                         max_index = logits.index(max(logits))
                         new_token = llm.decode(max_index)
                         if param_type in ("int", "float", "number"):
-                            if new_token.isdigit() or new_token in [
-                                "}", ",", " null"]:
+                            if new_token.isdigit():
+                                break
+                            elif new_token in ["}", ",", " null"]:
                                 break
                         elif new_token != " ":
                             break
                         logits[max_index] = min_float
                     params += new_token
-                    if params[-1]  in ["}", '"', ","]:
+                    if params[-1] in ["}", '"', ","]:
                         break
                 # If it's the end of the parameters
                 if i == len(keys):
@@ -391,7 +395,7 @@ def run_prompts(definitions: List[Dict],
     try:
         llm = Small_LLM_Model(model_name)
 
-        result: List[Dict] = []
+        result: List[Dict[str, Any]] = []
         for each in prompts:
             prompt = each["prompt"]
             if prompt == "" or prompt.isspace():
@@ -416,7 +420,7 @@ def run_prompts(definitions: List[Dict],
             while current_res.count("{") > current_res.count("}"):
                 current_res += "}"
             try:
-                current_dict: Dict = json.loads(current_res)
+                current_dict: Dict[str, Any] = json.loads(current_res)
             except json.JSONDecodeError as err:
                 print(f"\n{Fore.RED}Ivalid json output: {err}"
                       f"Output:\n\t{current_res}{Style.RESET_ALL}")
@@ -440,7 +444,7 @@ def run_prompts(definitions: List[Dict],
     return result
 
 
-def export_result(result: List[Dict], output: str) -> None:
+def export_result(result: List[Dict[str, Any]], output: str) -> None:
     """
     Export the result to a json file.
 

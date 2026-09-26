@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List
+from typing import Dict, List, Any
 from pathlib import Path
 import os
 import json
 
 
-def check_input_file(input_file: str) -> List[Dict]:
+def check_input_file(input_file: str) -> List[Dict[str, Any]]:
     """
     Checks if the file can be readed and if the json is valid.
     Args:
@@ -16,7 +16,7 @@ def check_input_file(input_file: str) -> List[Dict]:
     """
     try:
         with open(input_file) as file:
-            result: List[Dict] = json.load(file)
+            result: List[Dict[str, Any]] = json.load(file)
     except json.JSONDecodeError as err:
         raise Exception("Error enconding definitions from file "
                         f"'{input_file}': {err}")
@@ -59,7 +59,7 @@ def write_permission(file: str) -> None:
                     )
 
 
-def parse_files(argv: List[str]) -> List:
+def parse_files(argv: List[str]) -> List[Any]:
     """
     Receives system args and overwrites defaults if any is passed as parameter.
 
@@ -88,8 +88,8 @@ def parse_files(argv: List[str]) -> List:
             else:
                 raise NameError(F"Invalid parameter: '{flag}'")
         write_permission(io_files["output"])
-        definitions: List[Dict]
-        prompts: List[Dict]
+        definitions: List[Dict[str, Any]]
+        prompts: List[Dict[str, str]]
         output = io_files["output"]
         definitions = check_input_file(io_files["functions_definition"])
         prompts = check_input_file(io_files["input"])
