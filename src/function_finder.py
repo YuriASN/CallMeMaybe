@@ -286,7 +286,7 @@ def run_prompts(definitions: List[Dict],
             name: str = '"name": "fn'#remove fn ??? what if test doesn't have
             def_str = str(definitions)
             prompt = "Find the function to solve the prompt using " \
-                     "only one of these functions. "
+                     "only one of these functions. If no function can solve the prompt, forget about it and just say 'null'. "
             while True:
                 new_token: str = ""
                 tokens = llm.encode(prompt + def_str + res + name).tolist()[0]
@@ -296,6 +296,8 @@ def run_prompts(definitions: List[Dict],
                     new_token = llm.decode(logits.index(max(logits)))
                     if all((logit_in_str(max_index, names, llm),
                             new_token != " ")):
+                        break
+                    if new_token.find("null") != -1:
                         break
                     logits[max_index] = min_float
                 name += new_token
@@ -355,7 +357,8 @@ def run_prompts(definitions: List[Dict],
                         max_index = logits.index(max(logits))
                         new_token = llm.decode(max_index)
                         if param_type in ("int", "float", "number"):
-                            if new_token.isdigit() or new_token in ["}", ","]:
+                            if new_token.isdigit() or new_token in [
+                                "}", ",", " null"]:
                                 break
                         elif new_token != " ":
                             break
